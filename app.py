@@ -5,71 +5,68 @@ import pandas as pd
 import os
 from datetime import datetime
 
-# Directories and files
+st.set_page_config(page_title="Face Recognition Attendance", layout="wide")
+
+# Paths
 KNOWN_FACES_DIR = "known_faces"
 ATTENDANCE_FILE = "attendance.csv"
 os.makedirs(KNOWN_FACES_DIR, exist_ok=True)
 
-# Initialize attendance file if not exists
+# Initialize attendance file
 if not os.path.exists(ATTENDANCE_FILE):
     df = pd.DataFrame(columns=["Name", "Date", "Time"])
     df.to_csv(ATTENDANCE_FILE, index=False)
 
 # Streamlit UI
 st.title("🎥 Face Recognition Attendance System")
+st.write("Developed by **Nandini 💙**")
 
 menu = ["🏠 Home", "🧍 Register Face", "📋 View Attendance"]
 choice = st.sidebar.selectbox("Select Option", menu)
 
-# ---------------- HOME PAGE ----------------
+# -------------- HOME ----------------
 if choice == "🏠 Home":
-    st.write("Welcome, Nandini 💖")
-    st.write("Use the sidebar to register faces or check attendance.")
+    st.subheader("Welcome 👋")
+    st.write("Use the sidebar to register new faces or view attendance records.")
+    st.image("https://i.imgur.com/3E5z4FB.png", caption="AI-based Attendance System", use_container_width=True)
 
-# ---------------- REGISTER FACE ----------------
+# -------------- REGISTER FACE ----------------
 elif choice == "🧍 Register Face":
-    st.subheader("Register New Face")
+    st.subheader("📸 Register Your Face")
 
-    name = st.text_input("Enter Your Name:")
-    run_camera = st.button("Start Camera")
+    name = st.text_input("Enter your name:")
+    uploaded_image = st.file_uploader("Upload your face image", type=["jpg", "jpeg", "png"])
 
-    if run_camera:
-        if not name:
-            st.warning("Please enter your name before starting the camera.")
-        else:
-            st.info("Press 's' to save your face or 'q' to quit camera.")
+    if uploaded_image and name:
+        # Save image to known_faces folder
+        face_path = os.path.join(KNOWN_FACES_DIR, f"{name}.jpg")
+        with open(face_path, "wb") as f:
+            f.write(uploaded_image.getbuffer())
 
-            cap = cv2.VideoCapture(0)
-            FRAME_WINDOW = st.image([])
+        st.success(f"✅ {name}'s face registered successfully!")
 
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    st.error("Failed to access camera.")
-                    break
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                FRAME_WINDOW.image(frame)
+        # Mark attendance instantly
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H:%M:%S")
 
-                key = cv2.waitKey(1)
-                if key == ord('s'):
-                    face_path = os.path.join(KNOWN_FACES_DIR, f"{name}.jpg")
-                    cv2.imwrite(face_path, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-                    st.success(f"✅ Face registered as {name}")
-                    break
-                elif key == ord('q'):
-                    st.write("Camera closed.")
-                    break
+        df = pd.read_csv(ATTENDANCE_FILE)
+        new_entry = pd.DataFrame([[name, date_str, time_str]], columns=["Name", "Date", "Time"])
+        df = pd.concat([df, new_entry], ignore_index=True)
+        df.to_csv(ATTENDANCE_FILE, index=False)
+        st.info("Attendance recorded successfully! 🕒")
 
-            cap.release()
-            cv2.destroyAllWindows()
+    elif name and not uploaded_image:
+        st.warning("Please upload an image file of your face.")
 
-# ---------------- VIEW ATTENDANCE ----------------
+# -------------- VIEW ATTENDANCE ----------------
 elif choice == "📋 View Attendance":
-    st.subheader("Attendance Records")
+    st.subheader("📅 Attendance Records")
 
     if os.path.exists(ATTENDANCE_FILE):
         df = pd.read_csv(ATTENDANCE_FILE)
         st.dataframe(df)
+        csv = df.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Download Attendance CSV", csv, "attendance.csv", "text/csv")
     else:
-        st.info("No attendance data found yet.")
-
+        st.info("No attendance records found yet.")
