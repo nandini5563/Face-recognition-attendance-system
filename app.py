@@ -28,7 +28,7 @@ choice = st.sidebar.selectbox("Select Option", menu)
 if choice == "🏠 Home":
     st.subheader("Welcome 👋")
     st.write("Use the sidebar to register new faces or view attendance records.")
-   st.image("https://cdn.pixabay.com/photo/2023/02/22/18/00/artificial-intelligence-7807048_1280.jpg", caption="AI-based Attendance System", use_container_width=True)
+    st.image("https://cdn.pixabay.com/photo/2023/02/22/18/00/artificial-intelligence-7807048_1280.jpg", caption="AI-based Attendance System", use_container_width=True)
 
 
 # -------------- REGISTER FACE ----------------
