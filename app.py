@@ -1,73 +1,125 @@
 import streamlit as st
-import cv2
-import numpy as np
 import pandas as pd
+import cv2
 import os
+import numpy as np
+import face_recognition
 from datetime import datetime
 
-st.set_page_config(page_title="Face Recognition Attendance", layout="wide")
+st.set_page_config(page_title="Face Recognition Attendance", page_icon="📸", layout="wide")
 
-# Paths
-KNOWN_FACES_DIR = "known_faces"
-ATTENDANCE_FILE = "attendance.csv"
-os.makedirs(KNOWN_FACES_DIR, exist_ok=True)
+st.title("📸 Face Recognition Attendance System")
 
-# Initialize attendance file
-if not os.path.exists(ATTENDANCE_FILE):
-    df = pd.DataFrame(columns=["Name", "Date", "Time"])
-    df.to_csv(ATTENDANCE_FILE, index=False)
+# === Utility Functions ===
 
-# Streamlit UI
-st.title("🎥 Face Recognition Attendance System")
-st.write("Developed by **Nandini 💙**")
+def register_face(name):
+    st.info("Camera will open. Press 'S' to capture, 'Q' to quit.")
+    cam = cv2.VideoCapture(0)
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
-menu = ["🏠 Home", "🧍 Register Face", "📋 View Attendance"]
-choice = st.sidebar.selectbox("Select Option", menu)
+    os.makedirs("known_faces", exist_ok=True)
+    while True:
+        ret, frame = cam.read()
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
-# -------------- HOME ----------------
-if choice == "🏠 Home":
-    st.subheader("Welcome 👋")
-    st.write("Use the sidebar to register new faces or view attendance records.")
-    st.image("https://cdn.pixabay.com/photo/2023/02/22/18/00/artificial-intelligence-7807048_1280.jpg", caption="AI-based Attendance System", use_container_width=True)
+        for (x, y, w, h) in faces:
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0,255,0), 2)
+            if cv2.waitKey(1) & 0xFF == ord('s'):
+                cv2.imwrite(f"known_faces/{name}.jpg", frame[y:y+h, x:x+w])
+                st.success(f"✅ Face registered for {name}")
+                cam.release()
+                cv2.destroyAllWindows()
+                return
+        cv2.imshow("Register Face - Press S to Save", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cam.release()
+    cv2.destroyAllWindows()
 
 
-# -------------- REGISTER FACE ----------------
-elif choice == "🧍 Register Face":
-    st.subheader("📸 Register Your Face")
+def mark_attendance():
+    known_faces = []
+    known_names = []
 
-    name = st.text_input("Enter your name:")
-    uploaded_image = st.file_uploader("Upload your face image", type=["jpg", "jpeg", "png"])
+    for file in os.listdir("known_faces"):
+        img = face_recognition.load_image_file(f"known_faces/{file}")
+        encoding = face_recognition.face_encodings(img)[0]
+        known_faces.append(encoding)
+        known_names.append(os.path.splitext(file)[0])
 
-    if uploaded_image and name:
-        # Save image to known_faces folder
-        face_path = os.path.join(KNOWN_FACES_DIR, f"{name}.jpg")
-        with open(face_path, "wb") as f:
-            f.write(uploaded_image.getbuffer())
+    cap = cv2.VideoCapture(0)
+    attendance = pd.DataFrame(columns=["Name", "Date", "Time"])
+    st.info("Camera active! Press 'Q' to quit recognition.")
 
-        st.success(f"✅ {name}'s face registered successfully!")
+    while True:
+        ret, frame = cap.read()
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        faces = face_recognition.face_locations(rgb)
+        encodings = face_recognition.face_encodings(rgb, faces)
 
-        # Mark attendance instantly
-        now = datetime.now()
-        date_str = now.strftime("%Y-%m-%d")
-        time_str = now.strftime("%H:%M:%S")
+        for encodeFace, faceLoc in zip(encodings, faces):
+            matches = face_recognition.compare_faces(known_faces, encodeFace)
+            faceDis = face_recognition.face_distance(known_faces, encodeFace)
+            matchIndex = np.argmin(faceDis)
 
-        df = pd.read_csv(ATTENDANCE_FILE)
-        new_entry = pd.DataFrame([[name, date_str, time_str]], columns=["Name", "Date", "Time"])
-        df = pd.concat([df, new_entry], ignore_index=True)
-        df.to_csv(ATTENDANCE_FILE, index=False)
-        st.info("Attendance recorded successfully! 🕒")
+            if matches[matchIndex]:
+                name = known_names[matchIndex].upper()
+                now = datetime.now()
+                date = now.strftime("%Y-%m-%d")
+                time = now.strftime("%H:%M:%S")
 
-    elif name and not uploaded_image:
-        st.warning("Please upload an image file of your face.")
+                if not os.path.exists("attendance.csv"):
+                    attendance.to_csv("attendance.csv", index=False)
 
-# -------------- VIEW ATTENDANCE ----------------
-elif choice == "📋 View Attendance":
-    st.subheader("📅 Attendance Records")
+                df = pd.read_csv("attendance.csv") if os.path.exists("attendance.csv") else pd.DataFrame(columns=["Name", "Date", "Time"])
+                if not ((df["Name"] == name) & (df["Date"] == date)).any():
+                    new_row = pd.DataFrame([[name, date, time]], columns=["Name", "Date", "Time"])
+                    df = pd.concat([df, new_row], ignore_index=True)
+                    df.to_csv("attendance.csv", index=False)
+                    print(f"{name} marked present at {time}")
 
-    if os.path.exists(ATTENDANCE_FILE):
-        df = pd.read_csv(ATTENDANCE_FILE)
+                (top, right, bottom, left) = faceLoc
+                cv2.rectangle(frame, (left, top), (right, bottom), (0,255,0), 2)
+                cv2.putText(frame, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
+
+        cv2.imshow("Mark Attendance - Press Q to Quit", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+    st.success("✅ Attendance Marked Successfully!")
+
+
+def view_attendance():
+    if os.path.exists("attendance.csv"):
+        df = pd.read_csv("attendance.csv")
         st.dataframe(df)
-        csv = df.to_csv(index=False).encode("utf-8")
-        st.download_button("📥 Download Attendance CSV", csv, "attendance.csv", "text/csv")
     else:
-        st.info("No attendance records found yet.")
+        st.warning("No attendance data found!")
+
+
+# === Streamlit Sidebar ===
+st.sidebar.title("Options")
+option = st.sidebar.radio("Select Task:", ["Register Face", "Mark Attendance", "View Attendance"])
+
+if option == "Register Face":
+    name = st.text_input("Enter name:")
+    if st.button("Register"):
+        if name.strip() != "":
+            register_face(name.strip())
+        else:
+            st.warning("Please enter a valid name!")
+
+elif option == "Mark Attendance":
+    if st.button("Start Camera"):
+        mark_attendance()
+
+elif option == "View Attendance":
+    view_attendance()
+
+st.markdown("---")
+st.caption("Made with ❤️ by Nandini")
+
+
